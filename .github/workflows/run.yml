@@ -1,13 +1,8 @@
 name: Cloud check in action
 on:
-  push:
-    branches:
-      - main
-  watch:
-    types: started
   workflow_dispatch:
   schedule:
-    - cron: 35 2 * * *
+    - cron: 35 2,14 * * *
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -17,7 +12,9 @@ jobs:
         run: sleep $((RANDOM % 301))
 
       - name: 🔌 Check out code
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # 显式拉取历史节点，保留真实提交时间
 
       - name: 🔨 Setup Node.js environment
         uses: actions/setup-node@main
@@ -70,10 +67,17 @@ jobs:
           key: cloud189-token-${{ env.TOKEN_HASH }}
 
       - name: 🚗 Keep Running
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
           git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           git config --local user.name "${{ github.actor }}"
+          
+          LAST_COMMIT_TIME=$(git log -1 --format="%ct")
+          CURRENT_TIME=$(date +%s)
+          DIFF_SECONDS=$((CURRENT_TIME - LAST_COMMIT_TIME))
+          echo "LAST_COMMIT DIFF_SECONDS: ${DIFF_SECONDS}"
+          [ "$DIFF_SECONDS" -lt 864000 ] && exit 0  # 每10天执行一次空提交，保持Action运行
+          
           git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}
           git pull --rebase --autostash
           git commit --allow-empty -m "Keep Running..."
